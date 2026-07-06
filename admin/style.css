@@ -1,0 +1,185 @@
+:root {
+    --bg-sidebar: #002347;          /* Bleu nuit profond */
+    --bg-main: #f4f6f9;             /* Gris/blanc adouci */
+    --green-active: #00a651;        /* Vert SENEGALSET officiel */
+    
+    /* Variables statuts strictes */
+    --color-total: #00a651;
+    --color-attente: #ffb703;
+    --color-encours: #023e8a;
+    --color-resolu: #00a651;
+    --color-rejete: #e63946;
+
+    /* Opacités transparentes pour badges */
+    --bg-total-light: rgba(0, 166, 81, 0.08);
+    --bg-attente-light: rgba(255, 183, 3, 0.08);
+    --bg-encours-light: rgba(2, 62, 138, 0.08);
+    --bg-resolu-light: rgba(0, 166, 81, 0.08);
+    --bg-rejete-light: rgba(230, 57, 70, 0.08);
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: var(--bg-main) !important;
+}
+
+/* Typographies micro-ajustées */
+.text-xs { font-size: 0.76rem; }
+.text-sm { font-size: 0.86rem; }
+
+/* ================= SIDEBAR COMPLÈTE ================= */
+.sidebar {
+    width: 270px;
+    min-height: 100vh;
+    position: sticky;
+    top: 0;
+    background-color: var(--bg-sidebar) !important;
+}
+
+.text-sidebar-muted {
+    color: rgba(255, 255, 255, 0.45) !important;
+}
+
+.sidebar .nav-link {
+    color: rgba(255, 255, 255, 0.75) !important;
+    font-size: 0.86rem;
+    padding: 0.55rem 0.8rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.sidebar .nav-link:hover {
+    color: #ffffff !important;
+    background-color: rgba(255, 255, 255, 0.04);
+}
+
+.sidebar .nav-link.active {
+    color: #ffffff !important;
+    background-color: var(--green-active) !important;
+    font-weight: 600;
+}
+
+/* Boite encadrée d'alertes en bas de la sidebar */
+.sidebar-alert-box {
+    background-color: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* ================= ASSIGNATION STATUTS ET CARTES ================= */
+.stat-icon {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    font-size: 1.15rem;
+}
+
+.bg-total-light   { background-color: var(--bg-total-light) !important; }
+.text-total       { color: var(--color-total) !important; }
+
+.bg-attente-light { background-color: var(--bg-attente-light) !important; }
+.text-attente     { color: var(--color-attente) !important; }
+
+.bg-encours-light { background-color: var(--bg-encours-light) !important; }
+.text-encours     { color: var(--color-encours) !important; }
+
+.bg-resolu-light  { background-color: var(--bg-resolu-light) !important; }
+.text-resolu      { color: var(--color-resolu) !important; }
+
+.bg-rejete-light  { background-color: var(--bg-rejete-light) !important; }
+.text-rejete      { color: var(--color-rejete) !important; }
+
+/* Mini Barres de Progression sous les KPI */
+.progress-mini {
+    height: 5px;
+    width: 100%;
+    border-radius: 10px;
+    overflow: hidden;
+}
+.progress-bar-mini {
+    height: 100%;
+    border-radius: 10px;
+}
+.bg-total { background-color: var(--color-total); }
+.bg-attente { background-color: var(--color-attente); }
+.bg-encours { background-color: var(--color-encours); }
+.bg-resolu { background-color: var(--color-resolu); }
+.bg-rejete { background-color: var(--color-rejete); }
+
+/* ================= STRUCTURE DE L'INTERFACE ================= */
+.card {
+    border-radius: 14px !important;
+    border: none !important;
+    background-color: #ffffff;
+}
+
+.search-bar input {
+    background-color: #ffffff;
+    width: 320px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+}
+
+.badge-dot-red {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    width: 7px;
+    height: 7px;
+    background-color: var(--color-rejete);
+    border-radius: 50%;
+}
+.badge-dot-green {
+    width: 7px;
+    height: 7px;
+    background-color: var(--green-active);
+    border-radius: 50%;
+    display: inline-block;
+}
+
+/* ================= CARTOGRAPHIE ÉPURÉE ================= */
+.bg-map {
+    background: #e4edf5 url('https://images.unsplash.com/photo-1524661135-423995f22d0b?q=80&w=1000') center/cover;
+}
+.map-mockup-pin {
+    position: absolute;
+    background: white;
+    padding: 3px 10px;
+    border-radius: 20px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+.map-mockup-pin span {
+    background: var(--green-active);
+    color: white;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    font-weight: bold;
+}
+.map-mockup-pin small {
+    font-weight: 700;
+    font-size: 0.7rem;
+    color: #444;
+}
+
+/* ================= BLOCS ALERTES PERSONNALISÉS ================= */
+.alert-item {
+    border-left: 4px solid transparent;
+}
+.alert-danger-custom {
+    background-color: var(--bg-rejete-light);
+    border-left-color: var(--color-rejete);
+}
+.alert-warning-custom {
+    background-color: var(--bg-attente-light);
+    border-left-color: var(--color-attente);
+}
