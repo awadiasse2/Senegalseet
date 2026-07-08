@@ -218,7 +218,7 @@ $avatar_url = (!empty($user['avatar']) && file_exists("../uploads/avatars/" . $u
 
     <!-- EN-TÊTE -->
     <div class="mb-4 text-center">
-        <a href="edit_profil.php">Modifier mon profil</a>
+        <h4 class="fw-bold m-0 text-dark">Modifier mon profil</h4>
         <small class="text-muted">Mettez à jour vos informations publiques</small>
     </div>
 

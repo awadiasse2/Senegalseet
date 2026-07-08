@@ -1,54 +1,37 @@
 <?php
+// agent/carte.php
 session_start();
-if (!isset($_SESSION['user_id'])) {
-    header('Location: ../auth/login.php');
-    exit();
+
+// Protection de la page
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'agent') {
+    // header('Location: ../auth/login.php');
+    // exit();
 }
+
 require_once '../config/config.php';
 
-$user_id = $_SESSION['user_id'];
+$agent_id = $_SESSION['user_id'] ?? 8; // ID de test par défaut (Ousmane Niang - Agent)
+$error_msg = "";
 
-// RÉCUPÉRATION DU PROFIL EN TEMPS RÉEL
 try {
-    $stmt_user = $pdo->prepare("SELECT name, role, avatar FROM users WHERE id = ?");
-    $stmt_user->execute([$user_id]);
-    $current_user = $stmt_user->fetch(PDO::FETCH_ASSOC);
+    // Récupération des interventions géolocalisées actives
+    $query = "SELECT i.id, i.title as intervention_title, i.status, 
+                     r.description as report_desc, r.latitude, r.longitude
+              FROM interventions i
+              INNER JOIN reports r ON i.report_id = r.id
+              WHERE i.agent_id = :agent_id 
+                AND r.latitude IS NOT NULL 
+                AND r.longitude IS NOT NULL
+                AND i.status IN ('En cours', 'À venir')";
+              
+    $stmt = $pdo->prepare($query);
+    $stmt->bindValue(':agent_id', $agent_id, PDO::PARAM_INT);
+    $stmt->execute();
+    $locations = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
 } catch (PDOException $e) {
-    $current_user = null;
-}
-
-$user_name = !empty($current_user['name']) ? $current_user['name'] : 'Citoyen';
-$user_role = !empty($current_user['role']) ? $current_user['role'] : 'Client';
-
-if (!empty($current_user['avatar'])) {
-    if (strpos($current_user['avatar'], 'http') === 0) {
-        $user_avatar = $current_user['avatar'];
-    } else {
-        $user_avatar = "../uploads/avatars/" . $current_user['avatar'];
-    }
-} else {
-    $user_avatar = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80";
-}
-
-// Récupération dynamique des signalements géolocalisés
-$stmt = $pdo->query("SELECT r.latitude, r.longitude, r.status, c.name as cat_name, z.name as zone_name 
-    FROM reports r
-    LEFT JOIN categories c ON r.category_id = c.id
-    LEFT JOIN zones z ON r.zone_id = z.id
-    WHERE r.latitude IS NOT NULL AND r.longitude IS NOT NULL");
-$reports_list = $stmt->fetchAll();
-
-$markers_data = [];
-foreach ($reports_list as $rep) {
-    $markers_data[] = [
-        'coords' => [
-            'lat' => (float)$rep['latitude'],
-            'lng' => (float)$rep['longitude']
-        ],
-        'title'  => "Signalement : " . ($rep['cat_name'] ?? 'Inconnu'),
-        'status' => $rep['status'],
-        'zone'   => $rep['zone_name'] ?? 'Zone non spécifiée'
-    ];
+    $error_msg = "Erreur lors du chargement de la carte : " . $e->getMessage();
+    $locations = [];
 }
 ?>
 <!DOCTYPE html>
@@ -56,187 +39,287 @@ foreach ($reports_list as $rep) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Carte Interactive — SenegalSet</title>
+    <title>SENEGALSET - Carte Réseau</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Leaflet.js CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+
     <style>
-        body, html {
-            height: 100%;
-            margin: 0;
-            overflow-x: hidden;
+        :root {
+            --emerald: #00a651;
+            --bg-body: #f8fafc;
+            --sidebar-width: 280px;
+        }
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: var(--bg-body);
+            color: #1e293b;
+            min-height: 100vh;
         }
         
-        /* Structure globale */
-        .app-container {
-            width: 100%;
-            max-width: 100vw;
-            min-height: 100vh;
-            display: flex !important;
+        /* SIDEBAR (PC uniquement) */
+        .sidebar {
+            width: var(--sidebar-width);
+            height: 100vh;
+            position: fixed;
+            top: 0;
+            left: 0;
+            background-color: #ffffff;
+            border-right: 1px solid #e2e8f0;
+            z-index: 100;
+            padding: 24px;
         }
-
-        /* Forcer la Sidebar Desktop à garder ses propriétés */
-        .sidebar-desktop {
-            width: 260px !important;
-            min-width: 260px !important;
-            max-width: 260px !important;
-            min-height: 100vh;
+        .nav-menu-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            color: #64748b;
+            text-decoration: none;
+            border-radius: 12px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            transition: all 0.2s;
         }
-
-        /* Neutralisation des anciens styles conflictuels de style.css */
+        .nav-menu-item:hover, .nav-menu-item.active {
+            background-color: #f0fdf4;
+            color: var(--emerald);
+        }
+        
+        /* CONTENU CENTRAL */
         .main-content {
-            flex-grow: 1 !important;
-            min-width: 0 !important;
-            width: 100% !important;
-            margin-left: 0 !important; /* Annule l'espace blanc fantôme */
-            padding-left: 1.5rem !important;
+            margin-left: var(--sidebar-width);
+            padding: 40px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
         }
 
-        /* Ajustement de la carte Leaflet */
-        #map { 
-            height: 60vh; 
-            width: 100% !important; 
-            max-width: 100%;
-            border-radius: 16px; 
-            box-shadow: 0 4px 12px rgba(0,0,0,0.05); 
-            z-index: 1; 
+        /* Top bar mobile */
+        .top-bar-mobile {
+            display: none;
+            background: #fff;
+            padding: 15px 20px;
+            border-bottom: 1px solid #f1f5f9;
         }
-
-        @media (min-width: 992px) {
-            #map { height: calc(100vh - 140px); }
+        .menu-toggle-btn {
+            background: none;
+            border: none;
+            padding: 0;
+            color: #1e293b;
         }
         
-        .header-avatar { object-fit: cover; border: 1px solid #e2e8f0; }
+        /* CONTENEUR DE LA CARTE */
+        .map-container {
+            background: #ffffff;
+            border-radius: 16px;
+            border: 1px solid #e2e8f0;
+            padding: 12px;
+            flex-grow: 1;
+            position: relative;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02);
+        }
+        #map {
+            width: 100%;
+            height: 100%;
+            min-height: 450px;
+            border-radius: 12px;
+            z-index: 1;
+        }
+
+        /* Personnalisation moderne des Popups Leaflet */
+        .leaflet-popup-content-wrapper {
+            border-radius: 12px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08);
+            padding: 4px;
+        }
+        .leaflet-popup-tip {
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08);
+        }
+        
+        /* Bottom Nav Mobile */
+        .bottom-nav {
+            display: none;
+            background-color: #ffffff;
+            border-top: 1px solid #f1f5f9;
+            z-index: 1050;
+        }
+        .nav-link-custom {
+            color: #94a3b8;
+            font-size: 0.75rem;
+            text-decoration: none;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .nav-link-custom.active {
+            color: var(--emerald);
+        }
+
+        /* RESPONSIVE DESIGN */
+        @media (max-width: 991.98px) {
+            .sidebar { display: none; }
+            .main-content {
+                margin-left: 0;
+                padding: 20px;
+                padding-bottom: 90px;
+                height: calc(100vh - 65px);
+            }
+            .top-bar-mobile {
+                display: flex;
+            }
+            .bottom-nav {
+                display: flex;
+            }
+        }
     </style>
 </head>
 <body>
-    <div class="app-container">
-        <aside class="sidebar sidebar-desktop p-3 d-none d-lg-flex flex-column justify-content-between">
-            <div>
-                <div class="brand mb-4 d-flex align-items-center gap-2">
-                    <div class="logo-placeholder rounded-circle p-2 text-white fw-bold d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">SS</div>
-                    <div>
-                        <h6 class="m-0 fw-bold tracking-wide text-uppercase text-white">SenegalSet</h6>
-                        <small class="text-sidebar-muted text-xs">Mon espace client</small>
-                    </div>
-                </div>
-                <div class="menu-section mb-4">
-                    <small class="text-uppercase text-sidebar-muted text-xs fw-bold tracking-wider d-block mb-2">Menu client</small>
-                    <ul class="nav flex-column gap-1">
-                        <li class="nav-item"><a href="espace_client.php" class="nav-link"><i class="bi bi-grid-1x2-fill me-2"></i> Tableau de bord</a></li>
-                        <li class="nav-item"><a href="signalements.php" class="nav-link"><i class="bi bi-megaphone me-2"></i> Mes signalements</a></li>
-                        <li class="nav-item"><a href="interventions.php" class="nav-link"><i class="bi bi-tools me-2"></i> Interventions</a></li>
-                        <li class="nav-item"><a href="calendrier.php" class="nav-link"><i class="bi bi-calendar3 me-2"></i> Calendrier</a></li>
-                        <li class="nav-item"><a href="rapports.php" class="nav-link"><i class="bi bi-file-earmark-bar-graph me-2"></i> Rapports</a></li>
-                        <li class="nav-item"><a href="carte.php" class="nav-link active rounded"><i class="bi bi-map me-2"></i> Carte</a></li>
-                    </ul>
-                </div>
-            </div>
-            <div class="sidebar-footer border-top border-secondary pt-3">
-                <a href="../auth/logout.php" class="text-danger text-decoration-none text-sm fw-medium d-flex align-items-center gap-2">
-                    <i class="bi bi-box-arrow-left"></i> Déconnexion
-                </a>
-            </div>
-        </aside>
 
-        <div class="offcanvas offcanvas-start sidebar p-3" tabindex="-1" id="sidebarMobile" aria-labelledby="sidebarMobileLabel" style="width: 280px;">
-            <div class="offcanvas-header p-0 mb-4 justify-content-between align-items-center">
-                <div class="brand d-flex align-items-center gap-2">
-                    <div class="logo-placeholder rounded-circle p-2 text-white fw-bold d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">SS</div>
-                    <div>
-                        <h6 class="m-0 fw-bold tracking-wide text-uppercase text-white">SenegalSet</h6>
-                    </div>
-                </div>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
-            </div>
-            <div class="offcanvas-body p-0 d-flex flex-column justify-content-between">
-                <div class="menu-section mb-4">
-                    <small class="text-uppercase text-sidebar-muted text-xs fw-bold tracking-wider d-block mb-2">Menu client</small>
-                    <ul class="nav flex-column gap-1">
-                        <li class="nav-item"><a href="espace_client.php" class="nav-link"><i class="bi bi-grid-1x2-fill me-2"></i> Tableau de bord</a></li>
-                        <li class="nav-item"><a href="signalements.php" class="nav-link"><i class="bi bi-megaphone me-2"></i> Mes signalements</a></li>
-                        <li class="nav-item"><a href="interventions.php" class="nav-link"><i class="bi bi-tools me-2"></i> Interventions</a></li>
-                        <li class="nav-item"><a href="calendrier.php" class="nav-link"><i class="bi bi-calendar3 me-2"></i> Calendrier</a></li>
-                        <li class="nav-item"><a href="rapports.php" class="nav-link"><i class="bi bi-file-earmark-bar-graph me-2"></i> Rapports</a></li>
-                        <li class="nav-item"><a href="carte.php" class="nav-link active rounded"><i class="bi bi-map me-2"></i> Carte</a></li>
-                    </ul>
-                </div>
-                <div class="sidebar-footer border-top border-secondary pt-3">
-                    <a href="../auth/logout.php" class="text-danger text-decoration-none text-sm fw-medium d-flex align-items-center gap-2">
-                        <i class="bi bi-box-arrow-left"></i> Déconnexion
-                    </a>
-                </div>
-            </div>
+<!-- SIDEBAR ORDINATEUR -->
+<div class="sidebar">
+    <div class="d-flex align-items-center gap-2 mb-4 pb-3 border-bottom">
+        <div class="rounded-circle bg-success px-2 py-1 text-white fw-bold">SS</div>
+        <div>
+            <h6 class="m-0 fw-bold text-dark">SENEGALSET</h6>
+            <small class="text-muted" style="font-size: 10px;">Espace Opérations</small>
         </div>
-
-        <main class="main-content p-3 p-md-4">
-            <header class="d-flex justify-content-between align-items-center mb-4 gap-2">
-                <div class="d-flex align-items-center gap-2 gap-md-3">
-                    <button class="btn p-0 border-0 fs-4 text-dark d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#sidebarMobile" aria-controls="sidebarMobile">
-                        <i class="bi bi-list"></i>
-                    </button>
-                    <button class="btn p-0 border-0 fs-4 text-dark d-none d-lg-inline"><i class="bi bi-list"></i></button>
-                    <h4 class="m-0 fw-bold fs-5 fs-md-4">Anomalies géolocalisées</h4>
-                </div>
-                
-                <div class="d-flex align-items-center gap-2 bg-white p-1 pe-2 pe-md-3 border rounded-4 shadow-sm">
-                    <img src="<?= htmlspecialchars($user_avatar) ?>" class="rounded-circle header-avatar" width="35" height="35" alt="Avatar">
-                    <div class="d-none d-sm-block">
-                        <p class="m-0 fw-bold text-dark" style="font-size: 12px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><?= htmlspecialchars($user_name) ?></p>
-                        <small class="text-muted d-block" style="font-size: 9px; text-transform: capitalize;">Espace <?= htmlspecialchars($user_role) ?></small>
-                    </div>
-                </div>
-            </header>
-
-            <div id="map"></div>
-        </main>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script>
-        document.addEventListener("DOMContentLoaded", function() {
-            const map = L.map('map').setView([14.6937, -17.4474], 13);
+    <div class="mt-4">
+        <a href="index.php" class="nav-menu-item"><i class="bi bi-grid"></i> Dashboard</a>
+        <a href="interventions.php" class="nav-menu-item"><i class="bi bi-tools"></i> Interventions</a>
+        <a href="carte.php" class="nav-menu-item active"><i class="bi bi-map"></i> Carte Terrain</a>
+        <a href="profil.php" class="nav-menu-item"><i class="bi bi-person"></i> Mon Profil</a>
+    </div>
+
+    <div class="position-absolute bottom-0 start-0 w-100 p-3">
+        <a href="../auth/logout.php" class="nav-menu-item text-danger border-top pt-3 rounded-0 m-0" onclick="return confirm('Se déconnecter ?')">
+            <i class="bi bi-box-arrow-left"></i> Déconnexion
+        </a>
+    </div>
+</div>
+
+<!-- MENU COULISSANT MOBILE (Offcanvas) -->
+<div class="offcanvas offcanvas-start" tabindex="-1" id="mobileMenu" aria-labelledby="mobileMenuLabel" style="width: var(--sidebar-width);">
+    <div class="offcanvas-header border-bottom">
+        <div class="d-flex align-items-center gap-2">
+            <div class="rounded-circle bg-success px-2 py-1 text-white fw-bold">SS</div>
+            <div>
+                <h6 class="m-0 fw-bold text-dark" id="mobileMenuLabel">SENEGALSET</h6>
+                <small class="text-muted" style="font-size: 10px;">Espace Opérations</small>
+            </div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+    </div>
+    <div class="offcanvas-body pt-4">
+        <a href="index.php" class="nav-menu-item"><i class="bi bi-grid"></i> Dashboard</a>
+        <a href="interventions.php" class="nav-menu-item"><i class="bi bi-tools"></i> Interventions</a>
+        <a href="carte.php" class="nav-menu-item active"><i class="bi bi-map"></i> Carte Terrain</a>
+        <a href="profil.php" class="nav-menu-item"><i class="bi bi-person"></i> Mon Profil</a>
+    </div>
+</div>
+
+<!-- TOP BAR UNIQUE MOBILE -->
+<div class="top-bar-mobile justify-content-between align-items-center">
+    <button class="menu-toggle-btn" type="button" data-bs-toggle="offcanvas" data-bs-target="#mobileMenu" aria-controls="mobileMenu">
+        <i class="bi bi-list fs-3"></i>
+    </button>
+    <h6 class="m-0 fw-bold">Carte Réseau</h6>
+    <div>
+        <span class="badge bg-success bg-opacity-10 text-success rounded-pill px-2 py-1" style="font-size: 11px;">GPS Actif</span>
+    </div>
+</div>
+
+<!-- ZONE DE CONTENU PRINCIPALE -->
+<div class="main-content">
+    
+    <!-- EN-TÊTE -->
+    <div class="d-none d-lg-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3 mb-4 pb-3 border-bottom">
+        <div>
+            <h3 class="fw-bold text-dark m-0">Carte des interventions</h3>
+            <p class="text-muted m-0">Visualisation cartographique en temps réel de vos tâches assignées</p>
+        </div>
+    </div>
+
+    <?php if (!empty($error_msg)): ?>
+        <div class="alert alert-danger rounded-3 border-0 shadow-sm mb-4" role="alert">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i><?= $error_msg ?>
+        </div>
+    <?php endif; ?>
+
+    <!-- ZONE DE LA CARTE -->
+    <div class="map-container">
+        <div id="map"></div>
+    </div>
+
+</div>
+
+<!-- BARRE DE NAVIGATION MOBILE BASSE -->
+<nav class="navbar bottom-nav fixed-bottom py-2 shadow-lg">
+    <div class="container-fluid d-flex justify-content-around">
+        <a href="index.php" class="nav-link-custom"><i class="bi bi-grid mb-1 fs-5"></i>Dashboard</a>
+        <a href="interventions.php" class="nav-link-custom"><i class="bi bi-tools mb-1 fs-5"></i>Missions</a>
+        <a href="carte.php" class="nav-link-custom active"><i class="bi bi-map mb-1 fs-5"></i>Carte</a>
+        <a href="profil.php" class="nav-link-custom"><i class="bi bi-person mb-1 fs-5"></i>Profil</a>
+    </div>
+</nav>
+
+<!-- Scripts JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+    // 1. Initialisation de la carte (Centrée sur Kaolack/Sénégal par défaut)
+    var map = L.map('map').setView([14.1324, -16.0740], 12);
+
+    // 2. Chargement du fond de carte OpenStreetMap
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '© OpenStreetMap'
+    }).addTo(map);
+
+    // 3. Récupération des données converties en JSON
+    var locationsData = <?= json_encode($locations) ?>;
+    var markersBounds = [];
+
+    // 4. Injection des marqueurs
+    if (locationsData.length > 0) {
+        locationsData.forEach(function(item) {
+            var lat = parseFloat(item.latitude);
+            var lng = parseFloat(item.longitude);
             
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '&copy; OpenStreetMap contributors'
-            }).addTo(map);
+            if (!isNaN(lat) && !isNaN(lng)) {
+                // Style dynamique du badge selon le statut
+                var badgeClass = (item.status === 'En cours') ? 'bg-warning text-dark' : 'bg-primary text-white';
+                
+                var popupContent = `
+                    <div style="font-family: 'Plus Jakarta Sans', sans-serif; font-size: 12px; width: 220px; padding: 4px 2px;">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="badge ${badgeClass} rounded-pill" style="font-size: 10px; padding: 4px 8px;">${item.status}</span>
+                            <span class="text-muted fw-bold">#${item.id}</span>
+                        </div>
+                        <h6 style="margin: 0 0 4px 0; font-weight: 700; color: #1e293b; font-size: 13px;">${item.intervention_title}</h6>
+                        <p style="margin: 0 0 12px 0; color: #64748b; line-height: 1.4; font-size: 11.5px;">${item.report_desc || 'Aucun descriptif disponible.'}</p>
+                        <a href="action_intervention.php?id=${item.id}" class="btn btn-success text-white btn-sm w-100 d-block text-center shadow-sm py-1.5" style="font-size: 11px; border-radius: 8px; font-weight: 500; text-decoration: none; background-color: var(--emerald); border: none;">
+                            Gérer l'intervention <i class="bi bi-arrow-right ms-1"></i>
+                        </a>
+                    </div>
+                `;
 
-            const markersData = <?= json_encode($markers_data) ?>;
-            const group = [];
-
-            if (markersData.length > 0) {
-                markersData.forEach(item => {
-                    if (item.coords.lat && item.coords.lng) {
-                        const marker = L.marker([item.coords.lat, item.coords.lng]).addTo(map);
-                        
-                        const popupContent = `
-                            <div class="info-window-content">
-                                <h6 style="margin: 0 0 4px 0; font-weight: 600; color: #333; font-size: 13px;">\${item.title}</h6>
-                                <p style="margin: 0 0 6px 0; font-size: 11px; color: #666;"><strong>Secteur :</strong> \${item.zone}</p>
-                                <span style="font-size: 10px; font-weight: 500; background: #e2e8f0; padding: 2px 8px; border-radius: 10px; color: #4a5568; display: inline-block;">
-                                    Statut : &nbsp;\${item.status}
-                                </span>
-                            </div>
-                        `;
-                        marker.bindPopup(popupContent);
-                        group.push([item.coords.lat, item.coords.lng]);
-                    }
-                });
-
-                if (group.length > 1) {
-                    map.fitBounds(group);
-                } else if (group.length === 1) {
-                    map.setView(group[0], 14);
-                }
+                var marker = L.marker([lat, lng]).addTo(map).bindPopup(popupContent);
+                markersBounds.push([lat, lng]);
             }
-
-            setTimeout(() => {
-                map.invalidateSize();
-            }, 300);
         });
-    </script>
+
+        // Ajustement automatique du zoom pour englober tous les repères
+        if (markersBounds.length > 0) {
+            map.fitBounds(markersBounds, { padding: [50, 50] });
+        }
+    }
+</script>
 </body>
 </html>
